@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Phishing URL Detector (Standalone)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg1:#041028; --bg2:#07203a; --card:#071427; --glass:rgba(255,255,255,0.03);
+      --accent:#06b6d4; --accent2:#7c3aed; --muted:#94a3b8; --text:#e6eef8;
+    }
+    *{box-sizing:border-box;font-family:Inter,system-ui,Arial}
+    body{margin:0;min-height:100vh;background:linear-gradient(180deg,var(--bg1),var(--bg2));display:flex;align-items:center;justify-content:center;padding:28px;color:var(--text)}
+    .container{width:1100px;max-width:calc(100% - 32px);display:grid;grid-template-columns:1fr 440px;gap:22px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:22px;box-shadow:0 12px 36px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.03)}
+    .header{display:flex;gap:12px;align-items:center}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:18px}
+    h1{margin:0;font-size:20px}
+    .sub{color:var(--muted);font-size:13px;margin-top:6px}
+    .input-row{display:flex;gap:12px;align-items:center;margin-top:18px}
+    input.input{flex:1;padding:14px 16px;border-radius:12px;border:none;background:var(--glass);color:var(--text);font-weight:600;font-size:14px;outline:none}
+    button.btn{background:linear-gradient(90deg,var(--accent),var(--accent2));padding:12px 18px;border-radius:12px;border:none;color:white;font-weight:800;cursor:pointer}
+    .hint{margin-top:10px;color:var(--muted);font-size:13px}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .chip{padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02);cursor:pointer;font-size:13px;color:#cfe4ff}
+    .status{display:flex;flex-direction:column;gap:12px}
+    .result-badge{padding:16px;border-radius:12px;text-align:center;font-weight:800;font-size:16px}
+    .result-safe{background:linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.04));color:#86efac}
+    .result-phish{background:linear-gradient(90deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04));color:#fda4af}
+    .result-susp{background:linear-gradient(90deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04));color:#ffd08a}
+    .details{background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;color:#cbd5e1;font-size:13px}
+    pre{margin:8px 0 0 0;color:#dbeafe;font-size:13px;white-space:pre-wrap}
+    ul{margin:6px 0 0 18px}
+    footer{margin-top:8px;color:var(--muted);font-size:12px}
+    @media (max-width:980px){.container{grid-template-columns:1fr;}}
+    .small{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Left: Input & explanation -->
+    <div class="card">
+      <div class="header">
+        <div class="logo">PDT</div>
+        <div>
+          <h1>Phishing URL Detector (Standalone)</h1>
+          <div class="sub">No backend — runs in your browser. Ideal for demos and presentations.</div>
+        </div>
+      </div>
+
+      <div class="input-row" style="margin-top:18px">
+        <input id="urlInput" class="input" placeholder="Enter URL (eg: https://example.com)" />
+        <button id="checkBtn" class="btn">Check URL</button>
+      </div>
+
+      <div class="hint">Tip: Click the demo chips or paste any URL. This is an offline heuristic demo.</div>
+
+      <div class="chips">
+        <div class="chip" onclick="fillAndCheck('https://www.google.com')">https://www.google.com</div>
+        <div class="chip" onclick="fillAndCheck('http://bankofamerica.secure-update.info')">bankofamerica.secure-update.info</div>
+        <div class="chip" onclick="fillAndCheck('http://192.168.1.100/login')">192.168.1.100/login</div>
+        <div class="chip" onclick="fillAndCheck('https://secure-login-verification.net')">secure-login-verification.net</div>
+      </div>
+
+      <div id="log" style="margin-top:16px;color:var(--muted);font-size:13px"></div>
+      <footer class="small">Client-side demo. For production, integrate server-side ML, WHOIS, and threat intel.</footer>
+    </div>
+
+    <!-- Right: Result panel -->
+    <div class="card status">
+      <div id="resultBadge" class="result-badge result-susp">No URL checked yet</div>
+
+      <div class="details">
+        <div><strong>Verdict:</strong> <span id="verdict">—</span></div>
+        <div><strong>Score:</strong> <span id="score">—</span></div>
+        <div style="margin-top:8px"><strong>Reasons / Flags:</strong></div>
+        <ul id="reasons"><li>—</li></ul>
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03);margin:12px 0">
+        <div><strong>Detected Features</strong></div>
+        <pre id="features">—</pre>
+      </div>
+    </div>
+  </div>
+
+<script>
+/*
+ Heuristic checks performed in-browser:
+ - URL normalization
+ - length, presence of '@', multiple '//' segments
+ - IP address in host
+ - suspicious keywords
+ - HTTPS check
+ - dot count in domain
+*/
+function normalize(url){
+  let u = url.trim();
+  if(!u) return '';
+  if(!/^https?:\/\//i.test(u)){
+    u = 'http://' + u;
+  }
+  return u;
+}
+
+function hasIP(u){
+  // returns true if hostname is IPv4
+  try{
+    const a = new URL(u);
+    const host = a.hostname;
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  }catch(e){ return false; }
+}
+
+function countDoubleSlash(u){
+  // count occurrences of '//' beyond the protocol
+  let after = u.split('://')[1] || '';
+  return (after.match(/\/\//g) || []).length;
+}
+
+function extractFeatures(raw){
+  const u = normalize(raw);
+  let features = {};
+  features.original = raw;
+  features.normalized = u;
+  features.length = u.length;
+  features.has_at = u.indexOf('@') !== -1;
+  features.double_slash = countDoubleSlash(u) > 0;
+  features.has_ip = hasIP(u);
+  const suspicious_words_list = ['secure','account','update','login','verify','bank','ebay','paypal','confirm','reset','signin'];
+  features.suspicious_words = suspicious_words_list.filter(w => u.toLowerCase().includes(w));
+  try{
+    const parsed = new URL(u);
+    features.domain = parsed.hostname;
+    features.dots = parsed.hostname.split('.').length - 1;
+    features.has_https = parsed.protocol === 'https:';
+  }catch(e){
+    features.domain = '';
+    features.dots = 0;
+    features.has_https = false;
+  }
+  features.is_valid_url = true; // we assume it's a parseable URL after normalization
+  return features;
+}
+
+function analyze(raw){
+  const f = extractFeatures(raw);
+  let score = 0;
+  let reasons = [];
+
+  if(f.length > 75){ score += 2; reasons.push('Very long URL length'); }
+  if(f.has_at){ score += 3; reasons.push("Contains '@' which can hide real destination"); }
+  if(f.double_slash){ score += 1; reasons.push('Multiple // found in path'); }
+  if(f.has_ip){ score += 2; reasons.push('IP address used instead of domain'); }
+  if(f.suspicious_words.length){ score += 2; reasons.push('Suspicious keywords: ' + f.suspicious_words.join(', ')); }
+  if(!f.has_https){ score += 1; reasons.push('No HTTPS scheme'); }
+  if(f.dots >= 3){ score += 1; reasons.push('Many subdomains / dots in domain'); }
+
+  const threshold = 3;
+  let verdict = 'safe';
+  if(score >= threshold) verdict = 'phishing';
+  else if(score >= threshold - 1) verdict = 'suspicious';
+
+  return {verdict, score, reasons, features: f};
+}
+
+// UI wiring
+const btn = document.getElementById('checkBtn');
+const input = document.getElementById('urlInput');
+const badge = document.getElementById('resultBadge');
+const verdictEl = document.getElementById('verdict');
+const scoreEl = document.getElementById('score');
+const reasonsEl = document.getElementById('reasons');
+const featuresEl = document.getElementById('features');
+const log = document.getElementById('log');
+
+function showResult(res, raw){
+  verdictEl.textContent = res.verdict.toUpperCase();
+  scoreEl.textContent = res.score;
+  reasonsEl.innerHTML = res.reasons.length ? res.reasons.map(r => `<li>${r}</li>`).join('') : '<li>None</li>';
+  featuresEl.textContent = JSON.stringify(res.features, null, 2);
+
+  if(res.verdict === 'safe'){
+    badge.textContent = 'SAFE';
+    badge.className = 'result-badge result-safe';
+  } else if(res.verdict === 'suspicious'){
+    badge.textContent = 'SUSPICIOUS';
+    badge.className = 'result-badge result-susp';
+  } else {
+    badge.textContent = 'PHISHING';
+    badge.className = 'result-badge result-phish';
+  }
+  log.textContent = `Checked: ${raw}`;
+}
+
+function check(raw){
+  if(!raw || !raw.trim()){ alert('Please enter a URL'); return; }
+  const res = analyze(raw);
+  showResult(res, raw);
+}
+
+btn.addEventListener('click', ()=>{ check(input.value); });
+input.addEventListener('keydown', e => { if(e.key === 'Enter') check(input.value); });
+
+function fillAndCheck(u){ input.value = u; check(u); }
+</script>
+</body>
+</html>
